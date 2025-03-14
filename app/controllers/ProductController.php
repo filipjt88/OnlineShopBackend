@@ -1,6 +1,6 @@
 <?php
 
-require_once 'app/models/Product.php';
+require_once '/models/Product.php';
 
 class ProductController {
 
