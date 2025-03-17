@@ -49,4 +49,9 @@ elseif ($requestUri[0] === 'paypal') {
     }
 }
 
+elseif ($requestUri[0] === 'checkout') {
+    require_once '../views/checkout.view.php';
+}
+
+
 ?>
