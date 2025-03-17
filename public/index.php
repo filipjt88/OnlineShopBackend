@@ -39,4 +39,14 @@ if ($requestUri[0] === 'products') {
         $controller->getUserOrders();
     }
 }
+
+elseif ($requestUri[0] === 'paypal') {
+    $controller = new PayPalController();
+    if ($requestUri[1] === 'create') {
+        $controller->createOrder();
+    } elseif ($requestUri[1] === 'capture' && isset($_GET['orderId'])) {
+        $controller->captureOrder($_GET['orderId']);
+    }
+}
+
 ?>
