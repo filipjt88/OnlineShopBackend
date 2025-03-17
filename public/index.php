@@ -2,6 +2,7 @@
 require_once '../app/controllers/ProductController.php';
 require_once '../app/controllers/UserController.php';
 require_once '../app/controllers/CartController.php';
+require_once '../app/controllers/OrderController.php';
 
 $requestUri = explode('/', trim($_SERVER['REQUEST_URI'], '/'));
 
@@ -29,6 +30,13 @@ if ($requestUri[0] === 'products') {
         $controller->remove();
     } elseif ($requestUri[1] === 'clear') {
         $controller->clear();
+    }
+} elseif ($requestUri[0] === 'orders') {
+    $controller = new OrderController();
+    if ($requestUri[1] === 'create') {
+        $controller->create();
+    } elseif ($requestUri[1] === 'user') {
+        $controller->getUserOrders();
     }
 }
 ?>
