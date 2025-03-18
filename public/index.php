@@ -53,5 +53,15 @@ elseif ($requestUri[0] === 'checkout') {
     require_once '../views/checkout.view.php';
 }
 
+elseif ($requestUri[0] === 'paypal' && $requestUri[1] === 'create') {
+    PaypalController::create();
+}
+elseif ($requestUri[0] === 'paypal' && $requestUri[1] === 'capture') {
+    PaypalController::capture();
+}
+elseif ($requestUri[0] === 'orders') {
+    require_once '../views/orders.view.php';
+}
+
 
 ?>

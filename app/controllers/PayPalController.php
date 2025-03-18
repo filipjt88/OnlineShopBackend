@@ -1,119 +1,63 @@
 <?php
-require_once __DIR__ . '/../config.php';
-require_once __DIR__ . '/../models/Order.php';
+require_once '../app/models/Order.php';
+require_once '../app/models/Cart.php';
+require_once '../app/models/User.php';
 
-class PayPalController {
-    private $config;
-
-    public function __construct() {
-        $this->config = require __DIR__ . '/../config/paypal.php';
-    }
-
-    // Generiše PayPal token
-    private function getAccessToken() {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $this->config['base_url'] . "/v1/oauth2/token");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_USERPWD, $this->config['client_id'] . ":" . $this->config['secret']);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, "grant_type=client_credentials");
-
-        $response = json_decode(curl_exec($ch), true);
-        curl_close($ch);
-
-        return $response['access_token'] ?? null;
-    }
-
-    // Kreira PayPal narudžbinu
-    public function createOrder() {
+class PaypalController {
+    public static function create() {
         session_start();
         if (!isset($_SESSION['user_id'])) {
-            echo json_encode(["error" => "Morate biti prijavljeni!"]);
-            return;
-        }
-
-        $token = $this->getAccessToken();
-        if (!$token) {
-            echo json_encode(["error" => "Greška u autentifikaciji PayPal-a."]);
+            http_response_code(401);
+            echo json_encode(['error' => 'Niste prijavljeni.']);
             return;
         }
 
         $cart = Cart::getCart();
-        if (empty($cart)) {
-            echo json_encode(["error" => "Korpa je prazna."]);
+        $totalPrice = 0;
+
+        foreach ($cart as $productId => $quantity) {
+            $product = Product::getById($productId);
+            $totalPrice += $product['price'] * $quantity;
+        }
+
+        if ($totalPrice == 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Korpa je prazna.']);
             return;
         }
 
-        // Generišemo JSON za PayPal API
-        $items = [];
-        $totalPrice = 0;
-        foreach ($cart as $productId => $quantity) {
-            global $pdo;
-            $stmt = $pdo->prepare("SELECT name, price FROM products WHERE id = ?");
-            $stmt->execute([$productId]);
-            $product = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($product) {
-                $items[] = [
-                    "name" => $product['name'],
-                    "unit_amount" => ["currency_code" => "USD", "value" => $product['price']],
-                    "quantity" => $quantity
-                ];
-                $totalPrice += $product['price'] * $quantity;
-            }
-        }
+        $orderId = Order::createOrder($_SESSION['user_id'], $cart, $totalPrice);
 
-        $orderData = [
-            "intent" => "CAPTURE",
-            "purchase_units" => [[
-                "amount" => ["currency_code" => "USD", "value" => $totalPrice],
-                "items" => $items
-            ]]
-        ];
+        $_SESSION['order_id'] = $orderId;
 
-        // Slanje zahteva PayPal API-ju
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $this->config['base_url'] . "/v2/checkout/orders");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer $token",
-            "Content-Type: application/json"
-        ]);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($orderData));
-
-        $response = json_decode(curl_exec($ch), true);
-        curl_close($ch);
-
-        echo json_encode($response);
+        echo json_encode(['id' => uniqid("PAYPAL_ORDER_")]); // Simulacija PayPal order ID-a
     }
 
-    // Obrada PayPal plaćanja
-    public function captureOrder($orderId) {
-        $token = $this->getAccessToken();
-        if (!$token) {
-            echo json_encode(["error" => "Greška u autentifikaciji PayPal-a."]);
+    public static function capture() {
+        session_start();
+        if (!isset($_SESSION['order_id'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Porudžbina nije pronađena.']);
             return;
         }
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $this->config['base_url'] . "/v2/checkout/orders/$orderId/capture");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Authorization: Bearer $token",
-            "Content-Type: application/json"
-        ]);
+        $db = Database::connect();
+        $stmt = $db->prepare("UPDATE orders SET status = 'completed' WHERE id = ?");
+        $stmt->execute([$_SESSION['order_id']]);
 
-        $response = json_decode(curl_exec($ch), true);
-        curl_close($ch);
+        self::sendConfirmationEmail($_SESSION['user_id'], $_SESSION['order_id']);
 
-        if (isset($response['status']) && $response['status'] === "COMPLETED") {
-            session_start();
-            Order::createOrder($_SESSION['user_id']);
-            echo json_encode(["message" => "Plaćanje uspešno!"]);
-        } else {
-            echo json_encode(["error" => "Plaćanje nije uspelo."]);
-        }
+        unset($_SESSION['cart']);
+        unset($_SESSION['order_id']);
+
+        echo json_encode(['message' => 'Uspešno plaćeno!']);
+    }
+
+    private static function sendConfirmationEmail($userId, $orderId) {
+        $user = User::getById($userId);
+        $to = $user['email'];
+        $subject = "Potvrda kupovine";
+        $message = "Vaša porudžbina #$orderId je uspešno završena.";
+        mail($to, $subject, $message);
     }
 }
-?>
